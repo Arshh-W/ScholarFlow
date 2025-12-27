@@ -4,7 +4,7 @@ import * as FirebaseService from './services/mockFirebase';
 import * as GeminiService from './services/geminiService';
 import MermaidDiagram from './components/MermaidDiagram';
 import AgentNexus from './components/AgentNexus';
-import { Send, Mic, Upload, LogOut, Book, Image as ImageIcon, Layout, FileText, Plus, X, Brain, Volume2, VolumeX, Pin, Edit2, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Send, Mic, Upload, LogOut, Book, Image as ImageIcon, Layout, FileText, Plus, X, Brain, Volume2, VolumeX, Pin, Edit2, Trash2, Eye, EyeOff, Loader2, Maximize2 } from 'lucide-react';
 
 // Extend UploadedFile to hold processed text
 interface ProcessedFile extends UploadedFile {
@@ -22,6 +22,9 @@ const App: React.FC = () => {
   const [isVoiceActive, setIsVoiceActive] = useState(false); 
   const [isNarrationOn, setIsNarrationOn] = useState(true); 
   const [isAudioLoading, setIsAudioLoading] = useState(false); 
+  
+  // New UI State
+  const [isMapOpen, setIsMapOpen] = useState(false);
 
   const [agents, setAgents] = useState<AgentStatus[]>([
     { type: AgentType.HISTORIAN, isActive: false, activityDescription: 'Idle' },
@@ -446,54 +449,79 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* RIGHT SIDEBAR (Architect & Illustrator) */}
-      <aside className="w-96 bg-white/80 backdrop-blur border-l border-violet-100 hidden lg:flex flex-col z-10 shadow-sm">
-        {/* Architect Section */}
-        <div className="h-1/2 border-b border-violet-100 flex flex-col overflow-hidden">
-            <div className="p-4 bg-violet-50/50 border-b border-violet-100 flex items-center justify-between flex-shrink-0">
-                <span className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-3">
-                    <Layout size={18} className="text-scholar-blue"/> The Architect
-                </span>
-                {agents.find(a => a.type === AgentType.ARCHITECT)?.isActive && <div className="w-3 h-3 bg-scholar-blue rounded-full animate-ping"/>}
-            </div>
-            <div className="flex-1 p-2 relative overflow-hidden">
-                {session?.mermaidCode ? (
-                    <MermaidDiagram code={session.mermaidCode} />
-                ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-base gap-3">
-                        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center">
-                            <Layout size={28} className="opacity-30"/>
-                        </div>
-                        <span className="opacity-60">Awaiting Structure</span>
+      {/* RIGHT SIDEBAR (Redesigned) */}
+      <aside className="w-96 bg-white/80 backdrop-blur border-l border-violet-100 hidden lg:flex flex-col z-10 shadow-sm relative">
+        
+        {/* Architect Trigger Button */}
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 w-[90%]">
+             <button 
+                onClick={() => setIsMapOpen(true)}
+                className="w-full bg-white/90 backdrop-blur shadow-lg border-2 border-scholar-blue/20 hover:border-scholar-blue text-scholar-blue font-bold py-3 px-4 rounded-xl flex items-center justify-between transition-all hover:scale-[1.02] group"
+             >
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-scholar-blue/10 rounded-lg group-hover:bg-scholar-blue group-hover:text-white transition-colors">
+                        <Layout size={20} />
                     </div>
-                )}
-            </div>
+                    <span>View Knowledge Map</span>
+                </div>
+                {agents.find(a => a.type === AgentType.ARCHITECT)?.isActive && <div className="w-3 h-3 bg-scholar-blue rounded-full animate-ping"/>}
+             </button>
         </div>
 
-        {/* Illustrator Section */}
-        <div className="h-1/2 flex flex-col overflow-hidden">
-            <div className="p-4 bg-violet-50/50 border-b border-violet-100 flex items-center justify-between flex-shrink-0">
-                <span className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-3">
-                    <ImageIcon size={18} className="text-scholar-mint"/> The Illustrator
+        {/* Illustrator Section (Fills Sidebar) */}
+        <div className="flex-1 flex flex-col pt-24 pb-6 px-6 overflow-hidden bg-gradient-to-b from-white to-slate-50">
+            <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <ImageIcon size={14} className="text-scholar-mint"/> The Illustrator
                 </span>
-                {agents.find(a => a.type === AgentType.ILLUSTRATOR)?.isActive && <div className="w-3 h-3 bg-scholar-mint rounded-full animate-ping"/>}
+                {agents.find(a => a.type === AgentType.ILLUSTRATOR)?.isActive && <div className="w-2 h-2 bg-scholar-mint rounded-full animate-ping"/>}
             </div>
-            <div className="flex-1 p-6 flex items-center justify-center overflow-auto">
+            
+            <div className="flex-1 flex items-center justify-center rounded-2xl overflow-hidden border border-slate-100 bg-white shadow-sm relative">
                 {session?.currentImageUrl ? (
-                    <div className="relative group rounded-xl overflow-hidden shadow-md border border-slate-100 w-full">
-                        <img src={session.currentImageUrl} alt="Concept Art" className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105" />
-                    </div>
+                    <img src={session.currentImageUrl} alt="Concept Art" className="w-full h-full object-cover" />
                 ) : (
-                    <div className="text-slate-400 text-base text-center flex flex-col items-center gap-3">
-                        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center">
-                             <ImageIcon size={28} className="opacity-30"/>
-                        </div>
-                        <span className="opacity-60">Visualizing Concept...</span>
+                    <div className="text-slate-300 flex flex-col items-center gap-3 p-8 text-center">
+                        <ImageIcon size={48} strokeWidth={1}/>
+                        <span className="text-sm">Concepts visualized here</span>
                     </div>
                 )}
             </div>
         </div>
       </aside>
+
+      {/* ARCHITECT MAP MODAL */}
+      {isMapOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-8 animate-fade-in">
+              <div className="bg-white w-full max-w-6xl h-[85vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col relative animate-scale-up">
+                  {/* Modal Header */}
+                  <div className="h-16 border-b border-slate-100 flex items-center justify-between px-8 bg-slate-50/50">
+                      <div className="flex items-center gap-3">
+                          <Layout size={24} className="text-scholar-blue" />
+                          <h3 className="text-xl font-bold text-slate-700">Knowledge Architecture</h3>
+                      </div>
+                      <button 
+                        onClick={() => setIsMapOpen(false)}
+                        className="p-2 hover:bg-red-50 hover:text-red-500 rounded-full text-slate-400 transition-colors"
+                      >
+                          <X size={28} />
+                      </button>
+                  </div>
+                  
+                  {/* Map Content */}
+                  <div className="flex-1 p-8 bg-slate-50/30">
+                        {session?.mermaidCode ? (
+                            <MermaidDiagram code={session.mermaidCode} />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-4">
+                                <Layout size={64} className="opacity-20"/>
+                                <span className="text-lg">Waiting for structure...</span>
+                            </div>
+                        )}
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
