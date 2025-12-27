@@ -1,0 +1,7 @@
+{
+  "name": "ScholarFlow",
+  "description": "A personalized AI Faculty platform featuring a Multi-Agent System (MAS) for Socratic learning, dynamic flowcharts, and real-time voice interaction.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
