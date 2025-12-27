@@ -4,7 +4,7 @@ import * as FirebaseService from './services/mockFirebase';
 import * as GeminiService from './services/geminiService';
 import MermaidDiagram from './components/MermaidDiagram';
 import AgentNexus from './components/AgentNexus';
-import { Send, Mic, Upload, LogOut, Book, Image as ImageIcon, Layout, FileText, Plus, X, Brain, Volume2, VolumeX, Pin, Edit2, Trash2 } from 'lucide-react';
+import { Send, Mic, Upload, LogOut, Book, Image as ImageIcon, Layout, FileText, Plus, X, Brain, Volume2, VolumeX, Pin, Edit2, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   // --- STATE ---
@@ -16,6 +16,7 @@ const App: React.FC = () => {
   // Toggles
   const [isVoiceActive, setIsVoiceActive] = useState(false); // Live Mic Input
   const [isNarrationOn, setIsNarrationOn] = useState(true); // TTS Output
+  const [isAudioLoading, setIsAudioLoading] = useState(false); // TTS Loading State
 
   const [agents, setAgents] = useState<AgentStatus[]>([
     { type: AgentType.HISTORIAN, isActive: false, activityDescription: 'Idle' },
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // Toggle visibility
   const [displayName, setDisplayName] = useState('');
   const [authError, setAuthError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -104,7 +106,7 @@ const App: React.FC = () => {
   };
 
   const processAgentResponse = async (currentSession: StudySession, userPrompt: string) => {
-    // 1. Historian: Check for files
+    // 1. Historian: Check for files (using 3.0 Pro context)
     if (currentSession.files.length > 0) {
         updateAgent(AgentType.HISTORIAN, true, 'Retrieving Vault');
         await new Promise(r => setTimeout(r, 600)); 
@@ -112,7 +114,7 @@ const App: React.FC = () => {
     }
 
     // 2. Teacher: Generates Response (With RAG Context)
-    updateAgent(AgentType.TEACHER, true, 'Thinking Socratically');
+    updateAgent(AgentType.TEACHER, true, 'Reasoning...');
     
     const teacherText = await GeminiService.generateTeacherResponse(
         currentSession.messages.map(m => ({ role: m.role, content: m.content })), 
@@ -126,23 +128,32 @@ const App: React.FC = () => {
     await FirebaseService.saveMessageToSession(session!.id, teacherMsg);
     updateAgent(AgentType.TEACHER, false, 'Waiting');
 
-    // 2.5 Voice Narration (TTS)
+    // 2.5 Voice Narration (TTS) - Native Audio
     if (isNarrationOn) {
+        setIsAudioLoading(true);
         try {
             const audioBuffer = await GeminiService.generateSpeech(teacherText);
+            setIsAudioLoading(false);
+            
             if (audioBuffer && audioBuffer.byteLength > 0) {
                  if(!audioContextRef.current) {
                     audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({sampleRate: 24000});
                  }
                  const ctx = audioContextRef.current;
+                 // Ensure context is running (sometimes suspended by browser)
+                 if (ctx.state === 'suspended') {
+                    await ctx.resume();
+                 }
+
                  const decoded = await ctx.decodeAudioData(audioBuffer);
                  const source = ctx.createBufferSource();
                  source.buffer = decoded;
                  source.connect(ctx.destination);
-                 source.start();
+                 source.start(0); // Start immediately
             }
         } catch (e) {
             console.error("Narration Failed", e);
+            setIsAudioLoading(false);
         }
     }
 
@@ -152,7 +163,7 @@ const App: React.FC = () => {
     setSession(prev => prev ? { ...prev, mermaidCode: newMermaid } : null);
     updateAgent(AgentType.ARCHITECT, false, 'Map Updated');
 
-    // 4. Illustrator: Visualizes Concept
+    // 4. Illustrator: Visualizes Concept (Nano Banana)
     updateAgent(AgentType.ILLUSTRATOR, true, 'Visualizing');
     const newImage = await GeminiService.generateIllustration(currentSession.topic, teacherText);
     setSession(prev => prev ? { ...prev, currentImageUrl: newImage } : null);
@@ -210,8 +221,12 @@ const App: React.FC = () => {
       if(!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({sampleRate: 24000});
       }
+      
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') await ctx.resume();
+
       // Reset scheduling
-      audioNextStartTimeRef.current = audioContextRef.current.currentTime;
+      audioNextStartTimeRef.current = ctx.currentTime;
       
       await GeminiService.connectLiveSession(async (audioData) => {
           if(audioContextRef.current) {
@@ -259,7 +274,6 @@ const App: React.FC = () => {
   // --- RENDER ---
 
   if (!user) {
-    // ... Login UI (unchanged logic, just ensuring layout consistency)
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-indigo-50 via-purple-50 to-white">
         <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-scholar-violet/20">
@@ -272,7 +286,6 @@ const App: React.FC = () => {
             </div>
             {/* Form */}
             <div className="md:w-1/2 p-12 flex flex-col justify-center">
-                 {/* Re-using previous auth form logic here... for brevity assuming it renders properly */}
                  <div className="flex gap-6 mb-8 border-b border-slate-100 pb-2">
                     <button onClick={() => setAuthMode('login')} className={`text-xl font-semibold pb-2 transition-all ${authMode === 'login' ? 'text-scholar-darkViolet border-b-2 border-scholar-darkViolet' : 'text-slate-400'}`}>Login</button>
                     <button onClick={() => setAuthMode('signup')} className={`text-xl font-semibold pb-2 transition-all ${authMode === 'signup' ? 'text-scholar-darkViolet border-b-2 border-scholar-darkViolet' : 'text-slate-400'}`}>Sign Up</button>
@@ -281,7 +294,25 @@ const App: React.FC = () => {
                     {authError && <div className="p-4 bg-red-50 text-red-600 text-base rounded-lg">{authError}</div>}
                     {authMode === 'signup' && <input type="text" required className="w-full px-5 py-4 rounded-lg bg-slate-50 border text-lg" placeholder="Name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />}
                     <input type="email" required className="w-full px-5 py-4 rounded-lg bg-slate-50 border text-lg" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                    <input type="password" required className="w-full px-5 py-4 rounded-lg bg-slate-50 border text-lg" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                    
+                    <div className="relative">
+                        <input 
+                            type={showPassword ? "text" : "password"} 
+                            required 
+                            className="w-full px-5 py-4 rounded-lg bg-slate-50 border text-lg pr-12" 
+                            placeholder="Password" 
+                            value={password} 
+                            onChange={(e) => setPassword(e.target.value)} 
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                    </div>
+
                     <button type="submit" disabled={isLoading} className="w-full bg-scholar-violet hover:bg-scholar-darkViolet text-white font-bold py-5 rounded-xl text-lg">{isLoading ? 'Processing...' : (authMode === 'login' ? 'Enter' : 'Join')}</button>
                 </form>
             </div>
@@ -376,8 +407,8 @@ const App: React.FC = () => {
                     className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${isNarrationOn ? 'bg-scholar-violet/10 text-scholar-violet' : 'text-slate-400 hover:bg-slate-100'}`}
                     title="Toggle Auto-Narration"
                  >
-                    {isNarrationOn ? <Volume2 size={20}/> : <VolumeX size={20}/>}
-                    <span className="hidden sm:inline">{isNarrationOn ? 'Narration On' : 'Narration Off'}</span>
+                    {isAudioLoading ? <Loader2 size={20} className="animate-spin text-scholar-violet"/> : (isNarrationOn ? <Volume2 size={20}/> : <VolumeX size={20}/>)}
+                    <span className="hidden sm:inline">{isAudioLoading ? 'Generating...' : (isNarrationOn ? 'Narration On' : 'Narration Off')}</span>
                  </button>
 
                 <div className="flex bg-slate-100/80 p-1.5 rounded-lg">

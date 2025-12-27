@@ -7,6 +7,7 @@ const ai = new GoogleGenAI({ apiKey });
 
 /**
  * TEACHER AGENT: Text Generation with RAG
+ * Model: Gemini 3 Pro (for deep reasoning/context handling)
  */
 export const generateTeacherResponse = async (
     history: { role: string, content: string }[], 
@@ -16,20 +17,24 @@ export const generateTeacherResponse = async (
   if (!apiKey) throw new Error("API Key Missing");
 
   try {
-    const model = 'gemini-3-flash-preview';
+    // Switching to Pro for better RAG/Thinking capabilities as requested
+    const model = 'gemini-3-pro-preview';
+    
+    // Updated instruction to prevent meta-talk about "context windows" or "files"
     const systemInstruction = `You are a Socratic Teacher for ScholarFlow. 
-    Your goal is to guide the student using questions and insights. 
-    Use the provided file context (PDFs/Images) to answer accurately. 
-    Do not give long lectures. Break concepts down. 
-    Refer to "The Architect" (chart) or "The Illustrator" (visuals) to update context.`;
+    Your goal is to guide the student using questions and insights based on the provided materials.
+    
+    CRITICAL RULES:
+    1. Do NOT mention "I have read the file", "context window", "processing data", or "RAG".
+    2. Just TEACH. Answer the question directly using the knowledge provided.
+    3. If the answer is in the uploaded files, use it. If not, use your general knowledge but prioritize the files.
+    4. Keep responses concise and engaging.
+    5. Refer to "The Architect" (chart) or "The Illustrator" (visuals) if you want to emphasize a concept.`;
 
     // Prepare contents: History + New Message + File Context
-    // We add files to the LAST user message to ensure they are in the current context window
     const fileParts = files.map(f => {
         if (!f.data) return null;
-        // Determine mime type from data URL or fallback
         const mimeType = f.type || 'application/pdf'; 
-        // Remove data URL header if present for API
         const data = f.data.split(',')[1] || f.data;
         
         return {
@@ -46,7 +51,7 @@ export const generateTeacherResponse = async (
             role: 'user', 
             parts: [
                 { text: newMessage },
-                ...fileParts as any[] // Add file context to the latest prompt
+                ...fileParts as any[] 
             ] 
         }
     ];
@@ -68,13 +73,14 @@ export const generateTeacherResponse = async (
 };
 
 /**
- * VOICE NARRATION (TTS)
+ * VOICE NARRATION (Native Audio)
+ * Model: Gemini 2.5 Flash Native Audio
  */
 export const generateSpeech = async (text: string): Promise<ArrayBuffer | null> => {
     if (!apiKey || !text) return null;
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-preview-tts",
+            model: "gemini-2.5-flash-native-audio-preview-09-2025",
             contents: [{ parts: [{ text }] }],
             config: {
                 responseModalities: [Modality.AUDIO],
@@ -116,8 +122,8 @@ export const generateArchitectFlowchart = async (topic: string, currentContext: 
         Rules:
         1. Only return the mermaid code. NO markdown formatting.
         2. Keep it concise (5-8 nodes).
-        3. Use 'graph TB' (Top to Bottom) for better vertical scrolling fit.
-        4. Style the central node with fill:#a78bfa.
+        3. Use 'graph TB' (Top to Bottom).
+        4. Do NOT add style classes inside the code, the renderer handles it.
         `;
 
         const response = await ai.models.generateContent({
@@ -136,16 +142,17 @@ export const generateArchitectFlowchart = async (topic: string, currentContext: 
 
 /**
  * ILLUSTRATOR AGENT: Image Generation
+ * Model: Gemini 2.5 Flash Image (Nano Banana)
  */
 export const generateIllustration = async (topic: string, context: string) => {
     if (!apiKey) return "https://picsum.photos/400/300";
 
     try {
-        // Attempt to use real image generation model
+        // Nano Banana (gemini-2.5-flash-image)
         const response = await ai.models.generateContent({
              model: 'gemini-2.5-flash-image',
              contents: {
-                 parts: [{ text: `Create a clean, academic, flat-style illustration explaining: ${topic}. Context: ${context.substring(0, 100)}` }]
+                 parts: [{ text: `Create a clean, academic, flat-style illustration explaining: ${topic}. Context: ${context.substring(0, 200)}` }]
              }
         });
 
@@ -162,7 +169,6 @@ export const generateIllustration = async (topic: string, context: string) => {
             return `data:image/png;base64,${base64Image}`;
         }
         
-        // Fallback to placeholder if model refuses or returns text
         return `https://picsum.photos/seed/${encodeURIComponent(topic)}/500/300`;
 
     } catch (e) {

@@ -9,23 +9,42 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ code }) => {
 
   useEffect(() => {
     if (window.mermaid && ref.current) {
-      // Configuration for better fitting
+      // Configuration for better fitting and larger fonts
       window.mermaid.initialize({ 
           startOnLoad: true, 
           theme: 'neutral',
-          flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+          flowchart: { 
+            useMaxWidth: true, 
+            htmlLabels: true, 
+            curve: 'basis'
+          },
+          themeVariables: {
+            fontSize: '18px',
+            fontFamily: 'Outfit, sans-serif',
+            primaryTextColor: '#334155',
+            lineColor: '#a78bfa'
+          }
       });
       
       try {
-        window.mermaid.render(`mermaid-${Date.now()}`, code).then((result: any) => {
+        // Inject class styles directly into the mermaid code for consistent bold/large text
+        // This ensures that even if themeVariables fail, the CSS applies
+        const enhancedCode = code + `\nclassDef default fill:#fff,stroke:#333,stroke-width:2px,font-size:16px,font-weight:bold;`;
+
+        window.mermaid.render(`mermaid-${Date.now()}`, enhancedCode).then((result: any) => {
             if(ref.current) {
                 ref.current.innerHTML = result.svg;
-                // Force SVG to scale nicely
                 const svg = ref.current.querySelector('svg');
                 if (svg) {
                     svg.style.width = '100%';
                     svg.style.height = '100%';
                     svg.style.maxWidth = '100%';
+                    // Additional check to ensure text visibility
+                    const texts = svg.querySelectorAll('text');
+                    texts.forEach((t: SVGTextElement) => {
+                        t.style.fontWeight = '700';
+                        t.style.fontSize = '16px';
+                    });
                 }
             }
         });
