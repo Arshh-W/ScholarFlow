@@ -177,7 +177,9 @@ export const generateArchitectFlowchart = async (topic: string, currentContext: 
     
     try {
         const prompt = `Create a Mermaid.js flowchart (graph TB) for: "${topic}".
-        Based on the current explanation: "${currentContext.substring(0, 1000)}".
+        
+        CRITICAL: Base the flowchart structure STRICTLY on this specific reasoning context provided by the Teacher: 
+        "${currentContext.substring(0, 2000)}".
         
         CRITICAL VISUAL RULES:
         1. Identify the CURRENT step or concept being discussed in the explanation.
@@ -200,8 +202,46 @@ export const generateArchitectFlowchart = async (topic: string, currentContext: 
 
 // --- AGENT: ILLUSTRATOR ---
 export const generateIllustration = async (topic: string, context: string) => {
-    // Placeholder - Logic remains handled by client or future Imagen integration
-    return `https://picsum.photos/seed/${encodeURIComponent(topic)}/500/300`;
+    if (!apiKey) return `https://picsum.photos/seed/${encodeURIComponent(topic)}/800/600`;
+
+    try {
+        // Step 1: Use Gemini to generate a prompt for the image based on context
+        const promptExtraction = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Context: "${context.substring(0, 500)}..."
+            Task: Describe a single, highly visual, educational image that illustrates the key concept in this text. 
+            Keep it under 20 words.
+            Example: "A cross-section of a Roman Aqueduct showing water flow."`
+        });
+        
+        const imagePrompt = promptExtraction.text?.trim() || topic;
+
+        // Step 2: Attempt to generate actual image using Gemini 2.5 Flash Image
+        try {
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-image',
+                contents: {
+                    parts: [{ text: imagePrompt }]
+                }
+            });
+
+            // Find image part
+            for (const part of response.candidates?.[0]?.content?.parts || []) {
+                if (part.inlineData) {
+                    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                }
+            }
+        } catch (genError) {
+            console.warn("Image gen failed, falling back to seed", genError);
+        }
+
+        // Fallback: Use the extracted prompt as a deterministic seed for Picsum
+        // (Simulating "relevant" variance)
+        return `https://picsum.photos/seed/${encodeURIComponent(imagePrompt.substring(0, 20))}/800/600`;
+
+    } catch (error) {
+        return `https://picsum.photos/seed/${encodeURIComponent(topic)}/800/600`;
+    }
 }
 
 
