@@ -36,9 +36,14 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ code }) => {
                 ref.current.innerHTML = result.svg;
                 const svg = ref.current.querySelector('svg');
                 if (svg) {
-                    svg.style.width = '100%';
-                    svg.style.height = '100%';
+                    // Update styling to ensure the diagram scales to fit within the container (Contain)
+                    // "max-width: 100%" and "max-height: 100%" with "width/height: auto" 
+                    // ensures it doesn't overflow and maintains aspect ratio.
+                    svg.style.width = 'auto';
+                    svg.style.height = 'auto';
                     svg.style.maxWidth = '100%';
+                    svg.style.maxHeight = '100%';
+                    
                     // Additional check to ensure text visibility
                     const texts = svg.querySelectorAll('text');
                     texts.forEach((t: SVGTextElement) => {

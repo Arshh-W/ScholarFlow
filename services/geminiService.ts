@@ -143,18 +143,25 @@ export const generateSpeech = async (text: string): Promise<boolean> => {
         window.speechSynthesis.cancel();
 
         // 1. Sanitize the text (The "Visual Flex")
-        // We strip the Markdown so the robot voice doesn't say "Asterisk Asterisk Key Concept Asterisk Asterisk"
         const spokenText = cleanTextForSpeech(text);
 
         const utterance = new SpeechSynthesisUtterance(spokenText);
         
-        // Select a good voice if available
+        // Voice Selection Logic: Male, Gentle, Deep
         const voices = window.speechSynthesis.getVoices();
-        const preferredVoice = voices.find(v => v.name.includes('Google') || v.name.includes('Female')) || voices[0];
+        
+        // Try to find a specific high-quality male voice, or fallback to any male, or any English
+        const preferredVoice = voices.find(v => 
+            (v.name.includes('Google') && v.name.includes('Male')) || 
+            v.name.includes('Male') || 
+            (v.name.includes('English') && !v.name.includes('Female'))
+        ) || voices[0];
+
         if (preferredVoice) utterance.voice = preferredVoice;
 
-        utterance.rate = 1.1; 
-        utterance.pitch = 1.0;
+        // Settings for "Gentle yet deep, not too quick"
+        utterance.rate = 0.9;  // Slightly slower than normal (1.0)
+        utterance.pitch = 0.9; // Slightly deeper than normal (1.0)
 
         utterance.onend = () => resolve(true);
         utterance.onerror = () => resolve(false);

@@ -169,7 +169,8 @@ const App: React.FC = () => {
     if (!file || !session) return;
 
     // --- HISTORIAN ACTION ---
-    updateAgent(AgentType.HISTORIAN, true, `Reading ${file.name}...`);
+    // Updated Loading Text
+    updateAgent(AgentType.HISTORIAN, true, "Historian is training the model on your curriculum, might take a minute, grab a coffee in the meanwhile.");
     
     const reader = new FileReader();
     reader.onload = async (evt) => {
