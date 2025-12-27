@@ -1,182 +1,182 @@
-import { User, StudySession, Message, MessageRole, UploadedFile } from '../types';
+import { User, StudySession, Message, UploadedFile } from '../types';
 
-// Mock storage keys
-const USERS_KEY = 'scholarflow_users';
-const SESSIONS_KEY = 'scholarflow_sessions';
-const CURRENT_USER_KEY = 'scholarflow_current_user';
-
-// Helpers for localStorage interaction
-const getStorage = (key: string) => {
-  try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : [];
-  } catch {
-    return [];
-  }
+// --- CONFIGURATION ---
+// Mock Storage Keys
+const STORAGE_KEYS = {
+  USERS: 'scholarflow_mock_users',
+  SESSIONS: 'scholarflow_mock_sessions',
+  CURRENT_USER: 'scholarflow_mock_auth'
 };
 
-const setStorage = (key: string, data: any) => {
-  localStorage.setItem(key, JSON.stringify(data));
-};
+// Helper to simulate network delay
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Auth State simulation
-let currentUser: User | null = null;
-const authListeners: ((user: User | null) => void)[] = [];
-
-// Initialize from local storage if 'remembered'
-try {
-    const saved = localStorage.getItem(CURRENT_USER_KEY);
-    if (saved) {
-        currentUser = JSON.parse(saved);
-    }
-} catch {}
-
-const notifyAuthListeners = () => {
-  authListeners.forEach(l => l(currentUser));
-};
-
-// AUTH SERVICES
+// --- AUTH SERVICES ---
 
 export const login = async (email: string, pass: string): Promise<User> => {
-  const users = getStorage(USERS_KEY);
-  const user = users.find((u: any) => u.email === email && u.password === pass);
+  await delay(800);
   
-  if (!user) {
-    throw new Error("Invalid credentials. Please sign up if you don't have an account.");
+  // For demo purposes, if the user exists in local storage, log them in.
+  // We don't really hash passwords in this mock.
+  const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
+  const foundUser = users.find((u: any) => u.email === email);
+
+  if (foundUser) {
+    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(foundUser));
+    notifyAuthListeners(foundUser);
+    return foundUser;
   }
   
-  const appUser: User = {
-    uid: user.uid,
-    displayName: user.displayName,
-    email: user.email
-  };
-  
-  currentUser = appUser;
-  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(currentUser));
-  notifyAuthListeners();
-  return appUser;
+  // If not found, throw error to simulate auth failure
+  throw new Error("User not found. Please Sign Up.");
 };
 
 export const signup = async (email: string, pass: string, name: string): Promise<User> => {
-  const users = getStorage(USERS_KEY);
-  if (users.find((u: any) => u.email === email)) {
-    throw new Error("User already exists");
-  }
+  await delay(800);
   
-  const newUser = {
-    uid: 'user-' + Date.now(),
-    email,
-    password: pass,
-    displayName: name
+  const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
+  
+  if (users.find((u: any) => u.email === email)) {
+    throw new Error("Email already in use.");
+  }
+
+  const newUser: User = {
+    uid: 'user_' + Date.now().toString(36),
+    displayName: name,
+    email: email
   };
   
   users.push(newUser);
-  setStorage(USERS_KEY, users);
+  localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   
-  const appUser: User = {
-    uid: newUser.uid,
-    displayName: newUser.displayName,
-    email: newUser.email
-  };
+  // Auto login after signup
+  localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(newUser));
+  notifyAuthListeners(newUser);
   
-  currentUser = appUser;
-  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(currentUser));
-  notifyAuthListeners();
-  return appUser;
+  return newUser;
 };
 
 export const logout = async (): Promise<void> => {
-  currentUser = null;
-  localStorage.removeItem(CURRENT_USER_KEY);
-  notifyAuthListeners();
+  await delay(400);
+  localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+  notifyAuthListeners(null);
+};
+
+// Observer for Auth State
+let authObservers: ((user: User | null) => void)[] = [];
+
+const notifyAuthListeners = (user: User | null) => {
+  authObservers.forEach(cb => cb(user));
 };
 
 export const subscribeToAuthChanges = (callback: (user: User | null) => void) => {
-  authListeners.push(callback);
-  callback(currentUser);
+  authObservers.push(callback);
+  
+  // Check initial state
+  const savedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+  if (savedUser) {
+    try {
+      callback(JSON.parse(savedUser));
+    } catch (e) {
+      callback(null);
+    }
+  } else {
+    callback(null);
+  }
+
+  // Unsubscribe function
   return () => {
-    const idx = authListeners.indexOf(callback);
-    if (idx > -1) authListeners.splice(idx, 1);
+    authObservers = authObservers.filter(cb => cb !== callback);
   };
 };
 
-// DATA SERVICES
+// --- DATA SERVICES (MOCK) ---
 
 export const getSessions = async (userId: string): Promise<StudySession[]> => {
-  const allSessions = getStorage(SESSIONS_KEY);
+  await delay(600);
+  const allSessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
   const userSessions = allSessions.filter((s: any) => s.userId === userId);
   
-  if (userSessions.length === 0) {
-      return [{
-        id: 'demo-1',
-        topic: 'Introduction to ScholarFlow',
-        messages: [{
-           id: '1', 
-           role: MessageRole.MODEL, 
-           content: 'Welcome! I am your AI Faculty. Upload a PDF to the Librarian Vault or ask me a question to begin.', 
-           timestamp: Date.now() 
-        }],
-        mermaidCode: `graph TD\nA[Start] --> B[Upload Content]\nA --> C[Ask Question]\nstyle A fill:#a78bfa`,
-        files: [],
-        isPinned: false
-      }];
-  }
-  
   return userSessions.sort((a: StudySession, b: StudySession) => {
-      // Sort: Pinned first, then by recency (simulated by ID for now or could add lastActive)
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
-      return 0;
+      return b.id.localeCompare(a.id);
   });
 };
 
 export const createSession = async (userId: string, topic: string): Promise<StudySession> => {
-  const newSession = {
-    id: 'sess-' + Date.now(),
-    userId,
+  await delay(500);
+  
+  const newSession: StudySession & { userId: string, createdAt: number } = {
+    id: 'sess_' + Date.now().toString(36),
     topic,
     messages: [],
-    mermaidCode: `graph TD\nA[${topic}] --> B[Waiting for Context...]`,
+    mermaidCode: `graph TB\nA[${topic}] --> B[Waiting for Context...]`,
     files: [],
-    isPinned: false
+    isPinned: false,
+    userId,
+    createdAt: Date.now()
   };
-  
-  const allSessions = getStorage(SESSIONS_KEY);
+
+  const allSessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
   allSessions.push(newSession);
-  setStorage(SESSIONS_KEY, allSessions);
-  
-  const { userId: _, ...sessionData } = newSession;
-  return sessionData as unknown as StudySession;
+  localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(allSessions));
+
+  return newSession;
 };
 
 export const updateSessionMeta = async (sessionId: string, updates: Partial<StudySession>): Promise<void> => {
-    const allSessions = getStorage(SESSIONS_KEY);
-    const index = allSessions.findIndex((s: any) => s.id === sessionId);
-    if(index > -1) {
-        allSessions[index] = { ...allSessions[index], ...updates };
-        setStorage(SESSIONS_KEY, allSessions);
-    }
-}
+  await delay(300);
+  const allSessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
+  const index = allSessions.findIndex((s: any) => s.id === sessionId);
+  
+  if (index !== -1) {
+    allSessions[index] = { ...allSessions[index], ...updates };
+    localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(allSessions));
+  }
+};
 
 export const saveMessageToSession = async (sessionId: string, message: Message): Promise<void> => {
-  const allSessions = getStorage(SESSIONS_KEY);
-  const sessionIndex = allSessions.findIndex((s: any) => s.id === sessionId);
+  // Fire and forget, fast
+  const allSessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
+  const index = allSessions.findIndex((s: any) => s.id === sessionId);
   
-  if (sessionIndex > -1) {
-    if (!allSessions[sessionIndex].messages) allSessions[sessionIndex].messages = [];
-    allSessions[sessionIndex].messages.push(message);
-    setStorage(SESSIONS_KEY, allSessions);
+  if (index !== -1) {
+    if (!allSessions[index].messages) allSessions[index].messages = [];
+    
+    // Ensure message is serializable and valid
+    allSessions[index].messages.push(message);
+    
+    localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(allSessions));
   }
 };
 
 export const saveFileToSession = async (sessionId: string, fileData: UploadedFile): Promise<void> => {
-  const allSessions = getStorage(SESSIONS_KEY);
-  const sessionIndex = allSessions.findIndex((s: any) => s.id === sessionId);
+  await delay(400);
+  const allSessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
+  const index = allSessions.findIndex((s: any) => s.id === sessionId);
   
-  if (sessionIndex > -1) {
-     if (!allSessions[sessionIndex].files) allSessions[sessionIndex].files = [];
-    allSessions[sessionIndex].files.push(fileData);
-    setStorage(SESSIONS_KEY, allSessions);
+  if (index !== -1) {
+    if (!allSessions[index].files) allSessions[index].files = [];
+    
+    // Create a safe copy
+    const fileToStore = { ...fileData };
+    
+    // Mock Limitation: Avoid storing massive base64 strings in localStorage to prevent crashing the demo
+    if (fileToStore.data && fileToStore.data.length > 200000) {
+        console.warn("[MockService] File data too large for localStorage, stripping data content for persistence.");
+        fileToStore.data = undefined; 
+        // Note: In a real app with Firebase Storage or S3, this wouldn't be an issue.
+        // The app state still holds the data for the current session, so RAG works until reload.
+    }
+    
+    allSessions[index].files.push(fileToStore);
+    
+    try {
+        localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(allSessions));
+    } catch (e) {
+        console.error("LocalStorage Quota Exceeded", e);
+    }
   }
 };
 

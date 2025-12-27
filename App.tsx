@@ -6,6 +6,11 @@ import MermaidDiagram from './components/MermaidDiagram';
 import AgentNexus from './components/AgentNexus';
 import { Send, Mic, Upload, LogOut, Book, Image as ImageIcon, Layout, FileText, Plus, X, Brain, Volume2, VolumeX, Pin, Edit2, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react';
 
+// Extend UploadedFile to hold processed text
+interface ProcessedFile extends UploadedFile {
+    processedText?: string;
+}
+
 const App: React.FC = () => {
   // --- STATE ---
   const [user, setUser] = useState<User | null>(null);
@@ -14,9 +19,9 @@ const App: React.FC = () => {
   const [input, setInput] = useState('');
   
   // Toggles
-  const [isVoiceActive, setIsVoiceActive] = useState(false); // Live Mic Input
-  const [isNarrationOn, setIsNarrationOn] = useState(true); // TTS Output
-  const [isAudioLoading, setIsAudioLoading] = useState(false); // TTS Loading State
+  const [isVoiceActive, setIsVoiceActive] = useState(false); 
+  const [isNarrationOn, setIsNarrationOn] = useState(true); 
+  const [isAudioLoading, setIsAudioLoading] = useState(false); 
 
   const [agents, setAgents] = useState<AgentStatus[]>([
     { type: AgentType.HISTORIAN, isActive: false, activityDescription: 'Idle' },
@@ -30,15 +35,13 @@ const App: React.FC = () => {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // Toggle visibility
+  const [showPassword, setShowPassword] = useState(false); 
   const [displayName, setDisplayName] = useState('');
   const [authError, setAuthError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioNextStartTimeRef = useRef<number>(0); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- INITIALIZATION ---
@@ -106,20 +109,26 @@ const App: React.FC = () => {
   };
 
   const processAgentResponse = async (currentSession: StudySession, userPrompt: string) => {
-    // 1. Historian: Check for files (using 3.0 Pro context)
-    if (currentSession.files.length > 0) {
-        updateAgent(AgentType.HISTORIAN, true, 'Retrieving Vault');
-        await new Promise(r => setTimeout(r, 600)); 
-        updateAgent(AgentType.HISTORIAN, false, 'Context Supplied');
+    
+    // 1. Gather Context (Pre-processed by Historian)
+    // We concatenate all processed text from files
+    const contextNotes = (currentSession.files as ProcessedFile[])
+        .map(f => f.processedText || "")
+        .join("\n\n");
+
+    if (contextNotes) {
+        updateAgent(AgentType.HISTORIAN, true, 'Supplying Notes');
+        await new Promise(r => setTimeout(r, 400)); // Visual feedback only
+        updateAgent(AgentType.HISTORIAN, false, 'Idle');
     }
 
-    // 2. Teacher: Generates Response (With RAG Context)
+    // 2. Teacher: Generates Response (Fast, using Text Context)
     updateAgent(AgentType.TEACHER, true, 'Reasoning...');
     
     const teacherText = await GeminiService.generateTeacherResponse(
         currentSession.messages.map(m => ({ role: m.role, content: m.content })), 
         userPrompt,
-        currentSession.files // Pass Files for RAG
+        contextNotes // Passing text instead of files for speed
     );
     
     const teacherMsg: Message = { id: (Date.now() + 1).toString(), role: MessageRole.MODEL, content: teacherText, timestamp: Date.now() };
@@ -128,72 +137,59 @@ const App: React.FC = () => {
     await FirebaseService.saveMessageToSession(session!.id, teacherMsg);
     updateAgent(AgentType.TEACHER, false, 'Waiting');
 
-    // 2.5 Voice Narration (TTS) - Native Audio
+    // 2.5 Voice Narration (Web Speech API)
     if (isNarrationOn) {
         setIsAudioLoading(true);
-        try {
-            const audioBuffer = await GeminiService.generateSpeech(teacherText);
+        // Instant non-blocking call
+        GeminiService.generateSpeech(teacherText).then(() => {
             setIsAudioLoading(false);
-            
-            if (audioBuffer && audioBuffer.byteLength > 0) {
-                 if(!audioContextRef.current) {
-                    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({sampleRate: 24000});
-                 }
-                 const ctx = audioContextRef.current;
-                 // Ensure context is running (sometimes suspended by browser)
-                 if (ctx.state === 'suspended') {
-                    await ctx.resume();
-                 }
-
-                 const decoded = await ctx.decodeAudioData(audioBuffer);
-                 const source = ctx.createBufferSource();
-                 source.buffer = decoded;
-                 source.connect(ctx.destination);
-                 source.start(0); // Start immediately
-            }
-        } catch (e) {
-            console.error("Narration Failed", e);
-            setIsAudioLoading(false);
-        }
+        });
     }
 
-    // 3. Architect: Updates Map
-    updateAgent(AgentType.ARCHITECT, true, 'Mapping Concepts');
-    const newMermaid = await GeminiService.generateArchitectFlowchart(currentSession.topic, teacherText);
-    setSession(prev => prev ? { ...prev, mermaidCode: newMermaid } : null);
-    updateAgent(AgentType.ARCHITECT, false, 'Map Updated');
+    // 3. Architect: Updates Map (Async, doesn't block UI)
+    updateAgent(AgentType.ARCHITECT, true, 'Mapping');
+    GeminiService.generateArchitectFlowchart(currentSession.topic, teacherText).then(newMermaid => {
+        setSession(prev => prev ? { ...prev, mermaidCode: newMermaid } : null);
+        updateAgent(AgentType.ARCHITECT, false, 'Idle');
+    });
 
-    // 4. Illustrator: Visualizes Concept (Nano Banana)
+    // 4. Illustrator: Visualizes Concept (Async)
     updateAgent(AgentType.ILLUSTRATOR, true, 'Visualizing');
-    const newImage = await GeminiService.generateIllustration(currentSession.topic, teacherText);
-    setSession(prev => prev ? { ...prev, currentImageUrl: newImage } : null);
-    updateAgent(AgentType.ILLUSTRATOR, false, 'Visualized');
+    GeminiService.generateIllustration(currentSession.topic, teacherText).then(newImage => {
+        setSession(prev => prev ? { ...prev, currentImageUrl: newImage } : null);
+        updateAgent(AgentType.ILLUSTRATOR, false, 'Idle');
+    });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !session) return;
 
-    updateAgent(AgentType.HISTORIAN, true, `Absorbing ${file.name}...`);
+    // --- HISTORIAN ACTION ---
+    updateAgent(AgentType.HISTORIAN, true, `Reading ${file.name}...`);
     
-    // Read file as Base64 for RAG
     const reader = new FileReader();
     reader.onload = async (evt) => {
         const base64Data = evt.target?.result as string;
         
-        const newFile: UploadedFile = {
+        // 1. Create File Object
+        const newFile: ProcessedFile = {
             id: Date.now().toString(),
             name: file.name,
             size: (file.size / 1024).toFixed(1) + ' KB',
             type: file.type,
             uploadedAt: Date.now(),
-            data: base64Data // Stored for Context
+            data: base64Data 
         };
+
+        // 2. Process Immediately (The Historian's Job)
+        const extractedText = await GeminiService.processDocumentWithHistorian(newFile);
+        newFile.processedText = extractedText;
 
         const sysMsg: Message = {
             id: Date.now().toString(),
             role: MessageRole.MODEL,
-            content: `[System] The Historian has added "${file.name}" to the context window (1M Tokens). I can now analyze it deeply.`,
+            content: `[System] The Historian has read "${file.name}". Summary added to context memory.`,
             timestamp: Date.now()
         };
 
@@ -207,44 +203,13 @@ const App: React.FC = () => {
         await FirebaseService.saveFileToSession(session.id, newFile);
         await FirebaseService.saveMessageToSession(session.id, sysMsg);
 
-        updateAgent(AgentType.HISTORIAN, false, 'Knowledge Updated');
+        updateAgent(AgentType.HISTORIAN, false, 'Knowledge Indexed');
     };
     reader.readAsDataURL(file);
   };
 
   const toggleVoiceInput = async () => {
-    if (isVoiceActive) {
-      setIsVoiceActive(false);
-      window.location.reload(); 
-    } else {
-      setIsVoiceActive(true);
-      if(!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({sampleRate: 24000});
-      }
-      
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') await ctx.resume();
-
-      // Reset scheduling
-      audioNextStartTimeRef.current = ctx.currentTime;
-      
-      await GeminiService.connectLiveSession(async (audioData) => {
-          if(audioContextRef.current) {
-            const buffer = await GeminiService.decodeAudioData(audioData, audioContextRef.current);
-            const source = audioContextRef.current.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioContextRef.current.destination);
-            
-            const currentTime = audioContextRef.current.currentTime;
-            if (audioNextStartTimeRef.current < currentTime) {
-                audioNextStartTimeRef.current = currentTime;
-            }
-            
-            source.start(audioNextStartTimeRef.current);
-            audioNextStartTimeRef.current += buffer.duration;
-          }
-      }, () => setIsVoiceActive(false));
-    }
+    alert("Live Voice Input is currently disabled while upgrading models.");
   };
 
   // Session Management
@@ -366,7 +331,7 @@ const App: React.FC = () => {
                     className="border-2 border-dashed border-violet-200 rounded-xl p-6 flex flex-col items-center justify-center text-slate-400 hover:border-scholar-violet hover:text-scholar-violet hover:bg-violet-50/50 transition-all cursor-pointer group"
                 >
                     <Upload size={28} className="mb-2 group-hover:scale-110 transition-transform text-scholar-violet"/>
-                    <span className="text-xs text-center font-medium">Upload PDF/Image<br/>(RAG Context)</span>
+                    <span className="text-xs text-center font-medium">Upload PDF/Image<br/>(Historian Reads)</span>
                 </div>
                 <div className="mt-4 space-y-2">
                     {session?.files?.map(file => (
@@ -408,7 +373,7 @@ const App: React.FC = () => {
                     title="Toggle Auto-Narration"
                  >
                     {isAudioLoading ? <Loader2 size={20} className="animate-spin text-scholar-violet"/> : (isNarrationOn ? <Volume2 size={20}/> : <VolumeX size={20}/>)}
-                    <span className="hidden sm:inline">{isAudioLoading ? 'Generating...' : (isNarrationOn ? 'Narration On' : 'Narration Off')}</span>
+                    <span className="hidden sm:inline">{isAudioLoading ? 'Speaking...' : (isNarrationOn ? 'Narration On' : 'Narration Off')}</span>
                  </button>
 
                 <div className="flex bg-slate-100/80 p-1.5 rounded-lg">
